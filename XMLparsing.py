@@ -142,6 +142,9 @@ class SalesParserApp:
                     root = ET.fromstring(fake_xml)
 
                     for c_block in root.findall(".//C"):
+                        check_type = c_block.attrib.get("T", "0")
+                        is_return = check_type == "1"
+
                         e = c_block.find(".//E")
                         if e is None:
                             continue
@@ -150,7 +153,7 @@ class SalesParserApp:
                         ts = e.attrib.get("TS", "")
                         sm_raw = int(e.attrib.get("SM", 0))
                         sm = abs(sm_raw) / 100
-                        operation_type = "Продаж" if sm_raw >= 0 else "Повернення"
+                        operation_type = "Повернення" if is_return else "Продаж"
 
                         if ts and len(ts) == 14:
                             date = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
@@ -167,9 +170,10 @@ class SalesParserApp:
                             name = item.attrib.get("NM", "Без назви")
                             amount_raw = int(item.attrib.get("SM", 0))
                             amount = abs(amount_raw) / 100
-                            type_for_item = "Продаж" if amount_raw >= 0 else "Повернення"
+                            type_for_item = "Повернення" if is_return else "Продаж"
 
                             self.sales_data.append((date, time_str, check_no, name, f"{amount:.2f}", type_for_item))
+
 
                 except ET.ParseError as e:
                     log_message(self.log_text, f"❌ Помилка XML у {os.path.basename(filepath)}: {e}", level="ERROR")
