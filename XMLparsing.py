@@ -42,12 +42,14 @@ def log_message(text_widget, message, level="INFO"):
     text_widget.see("end")
     text_widget.update()
 
+
 class SalesParserApp:
     def __init__(self, root):
         self.root = root
         self.root.title("XML Парсер Марія-304Т3")
         self.style = Style("superhero")
         self.sales_data = []
+        self.sales_totals_by_date = {}  # итоговые суммы из <E>
         self.temp_dir = None
 
         self.frame = tk.Frame(self.root)
@@ -64,27 +66,19 @@ class SalesParserApp:
         self.progress.pack(fill="x", padx=10, pady=(0, 5))
 
         self.tree = Treeview(self.root, columns=("date", "time", "check", "name", "amount", "type"), show="headings", height=15)
-
         self.tree.heading("date", text="Дата")
         self.tree.column("date", width=90, anchor="center")
-
         self.tree.heading("time", text="Час")
         self.tree.column("time", width=80, anchor="center")
-
         self.tree.heading("check", text="Номер чека")
         self.tree.column("check", width=100, anchor="center")
-
         self.tree.heading("name", text="Найменування")
         self.tree.column("name", width=300, anchor="w", stretch=True)
-
         self.tree.heading("amount", text="Сума (грн)")
         self.tree.column("amount", width=90, anchor="e")
-
         self.tree.heading("type", text="Тип операції")
         self.tree.column("type", width=100, anchor="center")
-
         self.tree.pack(padx=10, pady=5, fill="both", expand=True)
-
 
         self.log_text = tk.Text(self.root, height=6, state="disabled", bg="black", fg="white", wrap="word")
         self.log_text.pack(fill="both", padx=10, pady=(0, 10))
@@ -95,6 +89,7 @@ class SalesParserApp:
             return
 
         self.sales_data.clear()
+        self.sales_totals_by_date.clear()
         self.tree.delete(*self.tree.get_children())
 
         self.temp_dir = tempfile.mkdtemp()
@@ -107,7 +102,6 @@ class SalesParserApp:
         except zipfile.BadZipFile:
             messagebox.showerror("Помилка", "ZIP-файл пошкоджено або не підтримується.")
             return
-
 
         files = [f for f in os.listdir(self.temp_dir) if f.endswith(".xml")]
         total = len(files)
@@ -148,15 +142,16 @@ class SalesParserApp:
                     root = ET.fromstring(fake_xml)
 
                     for c_block in root.findall(".//C"):
-                        items = c_block.findall(".//P")
                         e = c_block.find(".//E")
-                        
                         if e is None:
-                            continue  # если нет информации о чеке — пропускаем
+                            continue
 
-                        ts = e.attrib.get("TS", "")
                         check_no = e.attrib.get("NO", "")
-                        
+                        ts = e.attrib.get("TS", "")
+                        sm_raw = int(e.attrib.get("SM", 0))
+                        sm = abs(sm_raw) / 100
+                        operation_type = "Продаж" if sm_raw >= 0 else "Повернення"
+
                         if ts and len(ts) == 14:
                             date = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
                             time_str = f"{ts[8:10]}:{ts[10:12]}:{ts[12:]}"
@@ -164,13 +159,17 @@ class SalesParserApp:
                             date = "Невідомо"
                             time_str = ""
 
-                        for item in items:
+                        if date not in self.sales_totals_by_date:
+                            self.sales_totals_by_date[date] = {"Продаж": 0, "Повернення": 0}
+                        self.sales_totals_by_date[date][operation_type] += sm
+
+                        for item in c_block.findall(".//P"):
                             name = item.attrib.get("NM", "Без назви")
                             amount_raw = int(item.attrib.get("SM", 0))
                             amount = abs(amount_raw) / 100
-                            operation_type = "Продаж" if amount_raw >= 0 else "Повернення"
+                            type_for_item = "Продаж" if amount_raw >= 0 else "Повернення"
 
-                            self.sales_data.append((date, time_str, check_no, name, f"{amount:.2f}", operation_type))
+                            self.sales_data.append((date, time_str, check_no, name, f"{amount:.2f}", type_for_item))
 
                 except ET.ParseError as e:
                     log_message(self.log_text, f"❌ Помилка XML у {os.path.basename(filepath)}: {e}", level="ERROR")
@@ -193,8 +192,8 @@ class SalesParserApp:
         for date, group in df.groupby("Дата"):
             output_rows.extend(group.values.tolist())
 
-            total_sales = group[group["Тип операції"] == "Продаж"]["Сума (грн)"].astype(float).sum()
-            total_returns = group[group["Тип операції"] == "Повернення"]["Сума (грн)"].astype(float).sum()
+            total_sales = self.sales_totals_by_date.get(date, {}).get("Продаж", 0)
+            total_returns = self.sales_totals_by_date.get(date, {}).get("Повернення", 0)
             balance = total_sales - total_returns
 
             output_rows.append(["", "", "", "Ітого (продажі)", f"{total_sales:.2f}", ""])
@@ -236,6 +235,7 @@ class SalesParserApp:
                     self.temp_dir = None
                 except Exception as e:
                     messagebox.showwarning("Увага", f"Не вдалося видалити тимчасові файли.\n{e}")
+
 
 if __name__ == "__main__":
     root = tk.Tk()
