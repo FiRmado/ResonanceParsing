@@ -147,16 +147,16 @@ class SalesParserApp:
                 try:
                     root = ET.fromstring(fake_xml)
 
-                    items = root.findall(".//P")
-                    times = root.findall(".//E")
+                    for c_block in root.findall(".//C"):
+                        items = c_block.findall(".//P")
+                        e = c_block.find(".//E")
+                        
+                        if e is None:
+                            continue  # если нет информации о чеке — пропускаем
 
-                    for item, time in zip(items, times):
-                        name = item.attrib.get("NM", "Без назви")
-                        amount_raw = int(item.attrib.get("SM", 0))
-                        amount = abs(amount_raw) / 100
-                        ts = time.attrib.get("TS", "")
-                        check_no = time.attrib.get("NO", "")
-
+                        ts = e.attrib.get("TS", "")
+                        check_no = e.attrib.get("NO", "")
+                        
                         if ts and len(ts) == 14:
                             date = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
                             time_str = f"{ts[8:10]}:{ts[10:12]}:{ts[12:]}"
@@ -164,8 +164,13 @@ class SalesParserApp:
                             date = "Невідомо"
                             time_str = ""
 
-                        operation_type = "Продаж" if amount_raw >= 0 else "Повернення"
-                        self.sales_data.append((date, time_str, check_no, name, f"{amount:.2f}", operation_type))
+                        for item in items:
+                            name = item.attrib.get("NM", "Без назви")
+                            amount_raw = int(item.attrib.get("SM", 0))
+                            amount = abs(amount_raw) / 100
+                            operation_type = "Продаж" if amount_raw >= 0 else "Повернення"
+
+                            self.sales_data.append((date, time_str, check_no, name, f"{amount:.2f}", operation_type))
 
                 except ET.ParseError as e:
                     log_message(self.log_text, f"❌ Помилка XML у {os.path.basename(filepath)}: {e}", level="ERROR")
